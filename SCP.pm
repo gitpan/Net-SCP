@@ -1,7 +1,7 @@
 package Net::SCP;
 
 use strict;
-use vars qw($VERSION @ISA @EXPORT_OK $scp);
+use vars qw($VERSION @ISA @EXPORT_OK $scp $DEBUG);
 use Exporter;
 use Carp;
 use File::Basename;
@@ -12,9 +12,11 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.06';
+$VERSION = '0.07';
 
 $scp = "scp";
+
+$DEBUG = 0;
 
 =head1 NAME
 
@@ -203,7 +205,7 @@ sub get {
   $local ||= basename($remote);
   my $source = $self->{'host'}. ":$remote";
   $source = $self->{'user'}. '@'. $source if $self->{'user'};
-  scp($source,$local);
+  $self->scp($source,$local);
 }
 
 =item mkdir DIRECTORY
@@ -288,8 +290,8 @@ sub put {
   $remote = $self->{'cwd'}. "/$remote" if $self->{'cwd'} && $remote !~ /^\//;
   my $dest = $self->{'host'}. ":$remote";
   $dest = $self->{'user'}. '@'. $dest if $self->{'user'};
-  warn "scp $local $dest\n";
-  scp($local, $dest);
+  warn "scp $local $dest\n" if $DEBUG;
+  $self->scp($local, $dest);
 }
 
 =item binary
