@@ -12,7 +12,7 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 $scp = "scp";
 
@@ -272,12 +272,33 @@ sub binary { 1; }
 
 =back
 
+=head1 FREQUENTLY ASKED QUESTIONS
+
+Q: How do you supply a password to connect with ssh within a perl script
+using the Net::SSH module?
+
+A: You don't.  Use RSA or DSA keys.  See the ssh-keygen(1) manpage.
+
+Q: My script is "leaking" ssh processes.
+
+A: See L<perlfaq8/"How do I avoid zombies on a Unix system">, L<IPC::Open2>,
+L<IPC::Open3> and L<perlfunc/waitpid>.
+
 =head1 AUTHORS
 
 Ivan Kohler <ivan-netscp_pod@420.am>
 Anthony Deaver <bishop@projectmagnus.org>
 
 Thanks to Jon Gunnip <jon@soundbite.com> for fixing a bug with size().
+
+=head1 COPYRIGHT
+
+Copyright (c) 2000 Ivan Kohler.
+Copyright (c) 2000 Silicon Interactive Software Design.
+Copyright (c) 2000 Freeside Internet Services, LLC
+All rights reserved.
+This program is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
 
 =head1 BUGS
 
