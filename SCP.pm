@@ -3,14 +3,16 @@ package Net::SCP;
 use strict;
 use vars qw($VERSION @ISA @EXPORT_OK $scp);
 use Exporter;
+use Carp;
 use File::Basename;
 use String::ShellQuote;
 use IO::Handle;
 use Net::SSH qw(sshopen3);
+use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 $scp = "scp";
 
@@ -25,6 +27,18 @@ Net::SCP - Perl extension for secure copy protocol
   scp($source, $destination);
   iscp($source, $destination); #shows command, asks for confirmation, and
                                #allows user to type a password on tty
+
+  #OO interface
+  $scp = Net::SCP->new( "hostname", "username" );
+  #with named params
+  $scp = Net::SCP->new( { "host"=>$hostname, "user"=>$username } );
+  $scp->set(
+    cwd      => "/dir",
+    verbose  => "yes",
+    interact => "yes"
+  );
+  $scp->get("filename") or die $scp->{errstr};
+  $scp->put("filename") or die $scp->{errstr};
 
   #Net::FTP-style
   $scp = Net::SCP->new("hostname");
@@ -44,33 +58,66 @@ Simple wrappers around ssh and scp commands.
 
 =item scp SOURCE, DESTINATION
 
+Can be called either as a subroutine or a method; however, the subroutine
+interface is depriciated.
+
 Calls scp in batch mode, with the B<-B> B<-p> B<-q> and B<-r> options.
+Returns false upon error, with a text error message accessable in
+$scp->{errstr}.
+
+Returns false and sets the B<errstr> attribute if there is an error.
 
 =cut
 
 sub scp {
-  my($src, $dest) = @_;
-  my $flags = '-Bpq';
+  my $self = ref($_[0]) ? shift : {};
+  my($src, $dest, $interact) = @_;
+  my $flags = '-p';
   $flags .= 'r' unless &_islocal($src) && ! -d $src;
   my @cmd = ( $scp, $flags, $src, $dest );
-  system(@cmd);
+  if ( ( defined($interact) && $interact )
+       || ( defined($self->{interact}) && $self->{interact} ) ) {
+    print join(' ', @cmd), "\n";
+    unless ( &_yesno ) {
+      $self->{errstr} = "User declined";
+      return 0;
+    }
+  } else {
+    $flags .= 'qB';
+  }
+  my($reader, $writer, $error ) =
+    ( new IO::Handle, new IO::Handle, new IO::Handle );
+  $writer->autoflush(1);#  $error->autoflush(1);
+  my $pid = open3($writer, $reader, $error, @cmd );
+  waitpid $pid, 0;
+  if ( $? >> 8 ) {
+    chomp(my $errstr = <$error>);
+    $self->{errstr} = $errstr;
+    0;
+  } else {
+    1;
+  }
 }
 
 =item iscp SOURCE, DESTINATION
 
+Can be called either as a subroutine or a method; however, the subroutine
+interface is depriciated.
+
 Prints the scp command to be execute, waits for the user to confirm, and
 (optionally) executes scp, with the B<-p> and B<-r> flags.
+
+Returns false and sets the B<errstr> attribute if there is an error.
 
 =cut
 
 sub iscp {
-  my($src, $dest) = @_;
-  my $flags = '-p';
-  $flags .= 'r' unless &_islocal($src) && ! -d $src;
-  my @cmd = ( $scp, $flags, $src, $dest );
-  print join(' ', @cmd), "\n";
-  if ( &_yesno ) {
-    system(@cmd);
+  if ( ref($_[0]) ) {
+    my $self = shift;
+    $self->set( 'interact' => 1 );
+    $self->scp(@_);
+  } else {
+    scp(@_, 1);
   }
 }
 
@@ -90,21 +137,35 @@ sub _islocal {
 
 =over 4
 
-=item new HOSTNAME
+=item new HOSTNAME [ USER ] | HASHREF
 
-This is the constructor for a new Net::SCP object.  Additional parameters
-are ignored.
+This is the constructor for a new Net::SCP object.  You must specify a
+hostname, and may optionally provide a user.  Alternatively, you may pass a
+hashref of named params, with the following keys:
+
+    host - hostname
+    user - username
+    verbose - bool
+    interactive - bool
+    cwd - current working directory on remote server
 
 =cut
 
 sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
-  my $self = {
-               'host' => shift,
-               'user' => '',
-               'cwd'  => '',
-             };
+  my $self;
+  if ( ref($_[0]) ) {
+    $self = shift;
+  } else {
+    $self = {
+              'host'        => shift,
+              'user'        => ( scalar(@_) ? shift : '' ),
+              'verbose'     => 0,
+              'interactive' => 0,
+              'cwd'         => '',
+            };
+  }
   bless($self, $class);
 }
 
@@ -149,10 +210,12 @@ sub get {
 =item size FILE
 
 Returns the size in bytes for the given file as stored on the remote server.
+Returns 0 on error, and sets the B<errstr> attribute.  In the case of an actual
+zero-length file on the remote server, the special value '0e0' is returned,
+which evaluates to zero when used as a number, but is true.
 
 (Implementation note: An ssh connection is established to the remote machine
-and wc is used to determine the file size.  No distinction is currently made
-between nonexistant and zero-length files.)
+and wc is used to determine the file size.)
 
 =cut
 
@@ -165,13 +228,21 @@ sub size {
     ( new IO::Handle, new IO::Handle, new IO::Handle );
   $writer->autoflush(1);#  $error->autoflush(1);
   #sshopen2($host, $reader, $writer, 'wc', '-c ', shell_quote($file) );
-  sshopen3($host, $writer, $reader, $error, 'wc', '-c ', shell_quote($file) );
-  chomp( my $size = <$reader> || 0 );
-  if ( $size =~ /^\s+(\d+)/ ) {
-    $1;
-  } else {
-    warn "unparsable output from remote wc";
+  my $pid =
+    sshopen3($host, $writer, $reader, $error, 'wc', '-c ', shell_quote($file) );
+  waitpid $pid, 0;
+  if ( $? >> 8 ) {
+    chomp(my $errstr = <$error>);
+    $self->{errstr} = $errstr || "wc exited with status ". $?>>8;
     0;
+  } else {
+    chomp( my $size = <$reader> || 0 );
+    if ( $size =~ /^\s*(\d+)/ ) {
+      $1 ? $1 : '0e0';
+    } else {
+      $self->{errstr} = "unparsable output from remote wc: $size";
+      0;
+    }
   }
 }
 
@@ -202,13 +273,16 @@ sub binary { 1; }
 
 =back
 
-=head1 AUTHOR
+=head1 AUTHORS
 
-Ivan Kohler <ivan-netscp@420.am>
+Ivan Kohler <ivan-netscp_pod@420.am>
+Anthony Deaver <bishop@projectmagnus.org>
+
+Thanks to Jon Gunnip <jon@soundbite.com> for fixing a bug with size().
 
 =head1 BUGS
 
-Not OO.
+Still has no-OO cruft.
 
 In order to work around some problems with commercial SSH2, if the source file
 is on the local system, and is not a directory, the B<-r> flag is omitted.
