@@ -12,7 +12,7 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 $scp = "scp";
 
@@ -32,13 +32,11 @@ Net::SCP - Perl extension for secure copy protocol
   $scp = Net::SCP->new( "hostname", "username" );
   #with named params
   $scp = Net::SCP->new( { "host"=>$hostname, "user"=>$username } );
-  $scp->set(
-    cwd      => "/dir",
-    verbose  => "yes",
-    interact => "yes"
-  );
   $scp->get("filename") or die $scp->{errstr};
   $scp->put("filename") or die $scp->{errstr};
+  #tmtowtdi
+  $scp = new Net::SCP;
+  $scp->scp($source, $destination);
 
   #Net::FTP-style
   $scp = Net::SCP->new("hostname");
@@ -91,7 +89,8 @@ sub scp {
   my $pid = open3($writer, $reader, $error, @cmd );
   waitpid $pid, 0;
   if ( $? >> 8 ) {
-    chomp(my $errstr = <$error>);
+    my $errstr = join('', <$error>);
+    #chomp(my $errstr = <$error>);
     $self->{errstr} = $errstr;
     0;
   } else {
@@ -114,7 +113,7 @@ Returns false and sets the B<errstr> attribute if there is an error.
 sub iscp {
   if ( ref($_[0]) ) {
     my $self = shift;
-    $self->set( 'interact' => 1 );
+    $self->{'interact'} = 1;
     $self->scp(@_);
   } else {
     scp(@_, 1);
@@ -145,7 +144,6 @@ hashref of named params, with the following keys:
 
     host - hostname
     user - username
-    verbose - bool
     interactive - bool
     cwd - current working directory on remote server
 
@@ -161,7 +159,6 @@ sub new {
     $self = {
               'host'        => shift,
               'user'        => ( scalar(@_) ? shift : '' ),
-              'verbose'     => 0,
               'interactive' => 0,
               'cwd'         => '',
             };
@@ -177,7 +174,7 @@ Compatibility method.  Optionally sets the user.
 
 sub login {
   my($self, $user) = @_;
-  $self->{'user'} = $user;
+  $self->{'user'} = $user if $user;
 }
 
 =item cwd CWD

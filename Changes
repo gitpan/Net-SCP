@@ -1,5 +1,8 @@
 Revision history for Perl extension Net::SCP.
 
+0.03  Mon Feb 05 07:02:34 2000
+	- fixed documentation errors and iscp/issh problems from merge
+
 0.02  Fri Dec 08 16:03:00 2000
 	- applied patch from Anthony Deaver; cleanups & better error checking
 	- applied patch from Jon Gunnip; fixes size() method
