@@ -1,5 +1,8 @@
 Revision history for Perl extension Net::SCP.
 
+0.06  Sat Apr 13 15:16:56 2002
+	- mkdir method added by Anthony Awtrey <tony@awtrey.com>
+
 0.05  Wed Oct 24 03:49:06 2001
 	- documentation update
 

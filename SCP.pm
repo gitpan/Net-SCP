@@ -12,7 +12,7 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 $scp = "scp";
 
@@ -206,6 +206,36 @@ sub get {
   scp($source,$local);
 }
 
+=item mkdir DIRECTORY
+
+Makes a directory on the remote server.  Returns false and sets the B<errstr>
+attribute on errors.
+
+(Implementation note: An ssh connection is established to the remote machine
+and '/bin/mkdir B<-p>' is used to create the directory.)
+
+=cut
+
+sub mkdir {
+  my($self, $directory) = @_;
+  $directory = $self->{'cwd'}. "/$directory"
+    if $self->{'cwd'} && $directory !~ /^\//;
+  my $host = $self->{'host'};
+  $host = $self->{'user'}. '@'. $host if $self->{'user'};
+  my($reader, $writer, $error ) =
+    ( new IO::Handle, new IO::Handle, new IO::Handle );
+  $writer->autoflush(1);
+  my $pid = sshopen3( $host, $writer, $reader, $error,
+                      '/bin/mkdir', '-p ', shell_quote($directory) );
+  waitpid $pid, 0;
+  if ( $? >> 8 ) {
+    chomp(my $errstr = <$error>);
+    $self->{errstr} = $errstr || "mkdir exited with status ". $?>>8;
+    return 0;
+  }
+  1;
+}
+
 =item size FILE
 
 Returns the size in bytes for the given file as stored on the remote server.
@@ -225,7 +255,7 @@ sub size {
   $host = $self->{'user'}. '@'. $host if $self->{'user'};
   my($reader, $writer, $error ) =
     ( new IO::Handle, new IO::Handle, new IO::Handle );
-  $writer->autoflush(1);#  $error->autoflush(1);
+  $writer->autoflush(1);
   #sshopen2($host, $reader, $writer, 'wc', '-c ', shell_quote($file) );
   my $pid =
     sshopen3($host, $writer, $reader, $error, 'wc', '-c ', shell_quote($file) );
@@ -287,9 +317,12 @@ L<IPC::Open3> and L<perlfunc/waitpid>.
 =head1 AUTHORS
 
 Ivan Kohler <ivan-netscp_pod@420.am>
-Anthony Deaver <bishop@projectmagnus.org>
+
+Major updates Anthony Deaver <bishop@projectmagnus.org>
 
 Thanks to Jon Gunnip <jon@soundbite.com> for fixing a bug with size().
+
+Patch for the mkdir method by Anthony Awtrey <tony@awtrey.com>
 
 =head1 COPYRIGHT
 
