@@ -1,5 +1,8 @@
 Revision history for Perl extension Net::SCP.
 
+0.04  Wed Feb 07 10:26:11 2000
+        - fixed silly scp problem, thanks to Dan McCormick <danmcc@metro.net>
+
 0.03  Mon Feb 05 07:02:34 2000
 	- fixed documentation errors and iscp/issh problems from merge
 

@@ -12,7 +12,7 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 $scp = "scp";
 
@@ -72,9 +72,10 @@ sub scp {
   my($src, $dest, $interact) = @_;
   my $flags = '-p';
   $flags .= 'r' unless &_islocal($src) && ! -d $src;
-  my @cmd = ( $scp, $flags, $src, $dest );
+  my @cmd;
   if ( ( defined($interact) && $interact )
        || ( defined($self->{interact}) && $self->{interact} ) ) {
+    @cmd = ( $scp, $flags, $src, $dest );
     print join(' ', @cmd), "\n";
     unless ( &_yesno ) {
       $self->{errstr} = "User declined";
@@ -82,6 +83,7 @@ sub scp {
     }
   } else {
     $flags .= 'qB';
+    @cmd = ( $scp, $flags, $src, $dest );
   }
   my($reader, $writer, $error ) =
     ( new IO::Handle, new IO::Handle, new IO::Handle );
