@@ -12,7 +12,7 @@ use IPC::Open3;
 
 @ISA = qw(Exporter);
 @EXPORT_OK = qw( scp iscp );
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 $scp = "scp";
 
@@ -46,7 +46,6 @@ Net::SCP - Perl extension for secure copy protocol
   $scp->cwd("/dir");
   $scp->size("file");
   $scp->get("file");
-  $scp->quit;
 
 =head1 DESCRIPTION
 
@@ -76,7 +75,7 @@ sub scp {
   $flags .= 'r' unless &_islocal($src) && ! -d $src;
   my @cmd;
   if ( ( defined($interact) && $interact )
-       || ( defined($self->{interact}) && $self->{interact} ) ) {
+       || ( defined($self->{interactive}) && $self->{interactive} ) ) {
     @cmd = ( $scp, $flags, $src, $dest );
     print join(' ', @cmd), "\n";
     unless ( &_yesno ) {
@@ -90,6 +89,7 @@ sub scp {
   my($reader, $writer, $error ) =
     ( new IO::Handle, new IO::Handle, new IO::Handle );
   $writer->autoflush(1);#  $error->autoflush(1);
+  local $SIG{CHLD} = 'DEFAULT';
   my $pid = open3($writer, $reader, $error, @cmd );
   waitpid $pid, 0;
   if ( $? >> 8 ) {
@@ -117,7 +117,7 @@ Returns false and sets the B<errstr> attribute if there is an error.
 sub iscp {
   if ( ref($_[0]) ) {
     my $self = shift;
-    $self->{'interact'} = 1;
+    $self->{'interactive'} = 1;
     $self->scp(@_);
   } else {
     scp(@_, 1);
@@ -231,8 +231,8 @@ sub mkdir {
                       '/bin/mkdir', '-p ', shell_quote($directory) );
   waitpid $pid, 0;
   if ( $? >> 8 ) {
-    chomp(my $errstr = <$error>);
-    $self->{errstr} = $errstr || "mkdir exited with status ". $?>>8;
+    chomp(my $errstr = <$error> || '');
+    $self->{errstr} = $errstr || "mkdir exited with status ". ($?>>8);
     return 0;
   }
   1;
@@ -302,6 +302,14 @@ Compatibility method: does nothing; returns true.
 
 sub binary { 1; }
 
+=item quit
+
+Compatibility method: does nothing; returns true.
+
+=cut
+
+sub quit { 1; }
+
 =back
 
 =head1 FREQUENTLY ASKED QUESTIONS
@@ -309,14 +317,67 @@ sub binary { 1; }
 Q: How do you supply a password to connect with ssh within a perl script
 using the Net::SSH module?
 
-A: You don't.  Use RSA or DSA keys.  See the ssh-keygen(1) manpage.
+A: You don't (at least not with this module).  Use RSA or DSA keys.  See the
+   quick help in the next section and the ssh-keygen(1) manpage.
 
-Q: My script is "leaking" ssh processes.
+A #2: See L<Net::SCP::Expect> instead.
+
+Q: My script is "leaking" scp processes.
 
 A: See L<perlfaq8/"How do I avoid zombies on a Unix system">, L<IPC::Open2>,
 L<IPC::Open3> and L<perlfunc/waitpid>.
 
+=head1 GENERATING AND USING SSH KEYS
+
+=over 4
+
+=item 1 Generate keys
+
+Type:
+
+   ssh-keygen -t rsa
+
+And do not enter a passphrase unless you wanted to be prompted for
+one during file copying.
+
+Here is what you will see:
+
+   $ ssh-keygen -t rsa
+   Generating public/private rsa key pair.
+   Enter file in which to save the key (/home/User/.ssh/id_rsa):
+   Enter passphrase (empty for no passphrase):
+
+   Enter same passphrase again:
+
+   Your identification has been saved in /home/User/.ssh/id_rsa.
+   Your public key has been saved in /home/User/.ssh/id_rsa.pub.
+   The key fingerprint is:
+   5a:cd:2b:0a:cd:d9:15:85:26:79:40:0c:55:2a:f4:23 User@JEFF-CPU
+
+
+=item 2 Copy public to machines you want to upload to
+
+C<id_rsa.pub> is your public key. Copy it to C<~/.ssh> on target machine.
+
+Put a copy of the public key file on each machine you want to log into.
+Name the copy C<authorized_keys> (some implementations name this file
+C<authorized_keys2>)
+
+Then type:
+
+     chmod 600 authorized_keys
+
+Then make sure your home dir on the remote machine is not group or
+world writeable.
+
+=back
+
 =head1 AUTHORS
+
+Could really use a maintainer with enough time to at least review and apply
+patches more patches.  Or the module should just be deprecated in favor of
+Net::SFTP::Expect or Net::SFTP::Foreign and made into a simple compatiblity
+wrapper.
 
 Ivan Kohler <ivan-netscp_pod@420.am>
 
@@ -324,13 +385,15 @@ Major updates Anthony Deaver <bishop@projectmagnus.org>
 
 Thanks to Jon Gunnip <jon@soundbite.com> for fixing a bug with size().
 
-Patch for the mkdir method by Anthony Awtrey <tony@awtrey.com>
+Patch for the mkdir method by Anthony Awtrey <tony@awtrey.com>.
+
+Thanks to terrence brannon <tbone@directsynergy.com> for the documentation in
+the GENERATING AND USING SSH KEYS section.
 
 =head1 COPYRIGHT
 
-Copyright (c) 2000 Ivan Kohler.
-Copyright (c) 2000 Silicon Interactive Software Design.
-Copyright (c) 2000 Freeside Internet Services, LLC
+Copyright (c) 2000 Ivan Kohler
+Copyright (c) 2007 Freeside Internet Services, Inc.
 All rights reserved.
 This program is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself.
@@ -341,14 +404,32 @@ Still has no-OO cruft.
 
 In order to work around some problems with commercial SSH2, if the source file
 is on the local system, and is not a directory, the B<-r> flag is omitted.
-
-It's probably better just to use SSH1 or OpenSSH <http://www.openssh.com/>
+It's probably better just to use OpenSSH <http://www.openssh.com/> which is
+the de-facto standard these days anyway.
 
 The Net::FTP-style OO stuff is kinda lame.  And incomplete.
 
+iscp doesnt expect you to be logging into the box that you are copying to
+for the first time. so it's completely clueless about how to handle  the
+whole 'add this file to known hosts' message so it just hangs after the
+user hits y.  (Thanks to John L. Utz III).  To avoid this, SSH to the box
+once first.
+
 =head1 SEE ALSO
 
-scp(1), ssh(1)
+For a perl implementation that does not require the system B<scp> command, see
+L<Net::SFTP> instead.
+
+For a wrapper version that allows you to use passwords, see L<Net::SCP::Expect>
+instead.
+
+For a wrapper version of the newer SFTP protocol, see L<Net::SFTP::Foreign>
+instead.
+
+L<Net::SSH>, L<Net::SSH::Perl>, L<Net::SSH::Expect>, L<Net::SSH2>,
+L<IPC::PerlSSH>
+
+scp(1), ssh(1), L<IO::File>, L<IPC::Open2>, L<IPC::Open3>
 
 =cut
 
